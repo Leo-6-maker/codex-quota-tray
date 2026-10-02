@@ -37,7 +37,7 @@ internal sealed class TrayApp : ApplicationContext
     {
         this.demo = demo;
         state = demo ? Demo() : Load();
-        clients = Enumerable.Range(0, 2).Select(i => new CodexClient(Path.Combine(data, "accounts", i == 0 ? "A" : "B"))).ToArray();
+        clients = demo ? [] : Enumerable.Range(0, 2).Select(i => new CodexClient(Path.Combine(data, "accounts", i == 0 ? "A" : "B"))).ToArray();
         form.SuspendLayout();
         form.Text = $"Codex 双账号额度 · v{typeof(TrayApp).Assembly.GetName().Version?.ToString(3)}" + (demo ? " · 演示数据" : "");
         form.Font = new Font("Microsoft YaHei UI", 9.5f);

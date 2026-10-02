@@ -24,3 +24,9 @@ jobs:
       - name: Build and run offline self-check
         shell: pwsh
         run: ./build.ps1 -SelfTest
+      - name: Check demo credential isolation
+        shell: pwsh
+        run: ./scripts/check-demo.ps1
+      - name: Check launcher without starting resident
+        shell: pwsh
+        run: ./scripts/launch.ps1 -CheckOnly
