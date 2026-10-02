@@ -2,7 +2,7 @@
 
 A Windows taskbar monitor that keeps two Codex accounts' remaining quotas visible at a glance.
 
-**Windows 11 · C# / .NET 8 · MIT · Experimental v1.3.2**
+**Windows 11 · C# / .NET 8 · MIT · Experimental v1.3.3**
 
 **双账号剩余额度，任务栏一眼看清，悬停再看详情。**
 
@@ -28,7 +28,7 @@ A Windows taskbar monitor that keeps two Codex accounts' remaining quotas visibl
 
 ## 快速体验
 
-先安装下方列出的 .NET 8 SDK。下载源码并解压到可写目录后，双击对应脚本：
+先安装下方列出的 .NET 8 SDK。[下载当前主分支源码](https://github.com/Leo-6-maker/codex-quota-tray/archive/refs/heads/main.zip)并解压到可写目录后，双击对应脚本：
 
 | 脚本 | 用途 |
 | --- | --- |
@@ -36,6 +36,8 @@ A Windows taskbar monitor that keeps two Codex accounts' remaining quotas visibl
 | **`Start.cmd`** | 正式使用，需要 Codex CLI；首次自动编译并运行离线自检，再启动常驻监控。点击托盘图标分别授权 A、B。 |
 
 两个脚本在 `dist` 不存在时都会自动编译；编译完成后的再次启动直接使用已有程序。脚本不会自动下载依赖，也不要求管理员权限。
+
+更新源码后运行 `build.ps1 -SelfTest` 重新编译，确保使用新版本。
 
 ### 三种查看方式
 
