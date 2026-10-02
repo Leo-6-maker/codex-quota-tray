@@ -1,0 +1,25 @@
+# Local build outputs and monitor account data must never be published.
+/bin/
+/obj/
+/dist/
+/data/
+/tools/
+/artifacts/
+/scripts/resident-verification-*.json
+**/auth.json
+**/auth.dpapi*
+**/state.json
+**/health.json
+**/layout-result.json
+**/test-result.txt
+*.user
+*.suo
+.vs/
+.env
+.env.*
+*.log
+*.zip
+*.exe
+*.dll
+*.pdb
+*.tmp
