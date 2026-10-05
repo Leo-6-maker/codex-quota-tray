@@ -23,6 +23,7 @@ internal sealed class ResidentWidget : Control
     public bool LiveHandle => IsHandleCreated && TaskbarLayout.IsWindow(Handle);
     public Rectangle ScreenBounds => IsHandleCreated ? TaskbarLayout.BoundsOf(Handle) : Rectangle.Empty;
     public BarSnapshot? Snapshot { get; private set; }
+    internal bool FailNextHandleCreationForCheck { get; set; }
     protected override CreateParams CreateParams
     {
         get
@@ -30,7 +31,7 @@ internal sealed class ResidentWidget : Control
             var p = base.CreateParams;
             p.Style = (p.Style & ~unchecked((int)0x80000000)) | 0x40000000;
             p.ExStyle |= 0x08080080; // Native child surface; never a top-level Form.
-            if (TaskbarLayout.Shell != IntPtr.Zero) p.Parent = TaskbarLayout.Shell;
+            if (Snapshot is { ShellHandle: not 0 } snapshot) p.Parent = (IntPtr)snapshot.ShellHandle;
             return p;
         }
     }
@@ -42,11 +43,21 @@ internal sealed class ResidentWidget : Control
         SetStyle(ControlStyles.Selectable, false); TabStop = false;
         DoubleBuffered = true; ContextMenuStrip = menu; Hide();
         BackColor = TransparencyKey;
-        _ = Handle; // Establish the monitor's real DPI before calculating the first taskbar slot.
+        // Create the native child only inside RepositionAsync's guarded retry path.
         card = new HoverCard(state, demo, open, refresh) { ContextMenuStrip = menu };
         MouseDoubleClick += (_, e) => { if (e.Button == MouseButtons.Left) open(); };
         hover.Tick += (_, _) => HoverTick();
         layout.Tick += async (_, _) => await RepositionAsync();
+    }
+
+    protected override void CreateHandle()
+    {
+        if (FailNextHandleCreationForCheck)
+        {
+            FailNextHandleCreationForCheck = false;
+            throw new System.ComponentModel.Win32Exception(5, "Simulated taskbar access denied during logon");
+        }
+        base.CreateHandle();
     }
 
     public async Task SetEnabledAsync(bool value)
@@ -262,12 +273,13 @@ internal sealed class HoverCard : Form
     public bool Busy { get; set; }
     public int HighlightedAccount { get; set; } = -1;
     protected override bool ShowWithoutActivation => true;
-    protected override CreateParams CreateParams { get { var p = base.CreateParams; p.ExStyle |= 0x08000080; return p; } }
+    // Native topmost style avoids Form.TopMost's focus-on-show path.
+    protected override CreateParams CreateParams { get { var p = base.CreateParams; p.ExStyle |= 0x08000088; return p; } }
     public HoverCard(SavedState state, bool demo, Action open, Action refresh)
     {
         this.state = state; this.demo = demo; this.open = open; this.refresh = refresh;
         Text = "Codex 额度详情卡片"; AccessibleName = "双账号额度详情，点击查看完整面板";
-        FormBorderStyle = FormBorderStyle.None; ShowInTaskbar = false; TopMost = true; StartPosition = FormStartPosition.Manual;
+        FormBorderStyle = FormBorderStyle.None; ShowInTaskbar = false; StartPosition = FormStartPosition.Manual;
         AutoScaleMode = AutoScaleMode.None; DoubleBuffered = true;
         MouseClick += (_, e) =>
         {

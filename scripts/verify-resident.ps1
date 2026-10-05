@@ -21,6 +21,8 @@ Check-Resident ([string]$taskScheduled.State -eq 'Running') 'Resident task is no
 Check-Resident ($taskScheduled.Actions.Execute -eq $taskExe -and $taskScheduled.Actions.Arguments -eq '--worker --background') 'Wrong scheduled action.'
 Check-Resident ($taskScheduled.Principal.LogonType -eq 'Interactive' -and $taskScheduled.Principal.RunLevel -eq 'Limited') 'Task must run on the current desktop without elevation.'
 Check-Resident ($taskScheduled.Settings.ExecutionTimeLimit -eq 'PT0S') 'Unexpected task time limit.'
+Check-Resident ($taskScheduled.Settings.RestartCount -eq 3 -and $taskScheduled.Settings.RestartInterval -eq 'PT1M') 'Resident failure retry policy is missing.'
+foreach ($taskTrigger in $taskScheduled.Triggers) { Check-Resident ($taskTrigger.Enabled -and $taskTrigger.Delay -eq 'PT10S') 'Expected an enabled delayed login trigger.' }
 $taskDiagnostic = Start-Process -FilePath $taskExe -ArgumentList '--layout-check' -WindowStyle Hidden -PassThru
 Check-Resident ($taskDiagnostic.WaitForExit(15000)) 'Layout diagnostic timed out.'
 $taskLayout = Get-Content -LiteralPath (Join-Path $taskRoot 'dist\layout-result.json') -Raw | ConvertFrom-Json
@@ -39,6 +41,7 @@ $taskReport = [ordered]@{
     Result='PASS'; Version=(Get-Item -LiteralPath $taskExe).VersionInfo.ProductVersion; WorkerId=$taskWorker.ProcessId
     WorkerParent=$taskAncestors[0]; IndependentOfCodex=$true; TaskRunning=([string]$taskScheduled.State -eq 'Running')
     LoginStartup=(@($taskScheduled.Triggers).Count -gt 0); UnlimitedRuntime=$true; NativeTaskbarChild=$taskLayout.Embedded
+    StartupDelay=@($taskScheduled.Triggers | ForEach-Object { $_.Delay }); FailureRestartCount=$taskScheduled.Settings.RestartCount; FailureRestartInterval=$taskScheduled.Settings.RestartInterval
     Collision=$taskLayout.ResidentCollisions; Bounds=$taskLayout.residents; DataDirectory=$taskData
     ScreenRingPixels=$taskLayout.rendering[0].RingPixels
     TransparentBackground=$taskLayout.rendering[0].TransparentBackground

@@ -200,7 +200,7 @@ internal sealed class TrayApp : ApplicationContext
     {
         if (exiting) return;
         var recovered = false;
-        if (widget.IsDisposed || !widget.LiveHandle)
+        if (widget.IsDisposed || widget.IsHandleCreated && !widget.LiveHandle)
         {
             widget.Dispose();
             widget = new ResidentWidget(state, demo, menu, Show, () => _ = RefreshAllAsync());
@@ -223,6 +223,22 @@ internal sealed class TrayApp : ApplicationContext
     {
         var transitions = new List<object>();
         var stable = widget.Snapshot!;
+        using (var coldStart = new ResidentWidget(state, true, menu, () => {}, () => {}))
+        {
+            if (coldStart.IsHandleCreated) throw new InvalidOperationException("Constructing the tray widget must not create a native taskbar window");
+            // Inject a startup failure through the same creation path used at logon.
+            coldStart.FailNextHandleCreationForCheck = true;
+            await coldStart.SetEnabledAsync(true);
+            if (coldStart.IsHandleCreated || coldStart.Visible || coldStart.LayoutError is null)
+                throw new InvalidOperationException("Access denied at logon must be contained without a visible child or process exit");
+            var startupError = coldStart.LayoutError;
+            await coldStart.RepositionAsync(stable with { ShellHandle = 0 });
+            if (coldStart.IsHandleCreated || coldStart.Visible) throw new InvalidOperationException("Unavailable taskbar must keep a cold-start child uncreated");
+            await coldStart.RepositionAsync(stable);
+            if (!coldStart.LiveHandle || !coldStart.Visible || !coldStart.Embedded || coldStart.LayoutError is not null)
+                throw new InvalidOperationException("The same widget must recover after logon access denial without reconstruction");
+            transitions.Add(new { ColdStartCreationFailureContained = true, SameWidgetRecovered = true, StartupError = startupError });
+        }
         var visibilityChanges = 0;
         EventHandler visibleChanged = (_, _) => visibilityChanges++;
         widget.VisibleChanged += visibleChanged;

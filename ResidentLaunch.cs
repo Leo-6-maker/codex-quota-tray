@@ -46,9 +46,10 @@ internal static class ResidentLaunch
             definition.Settings.Enabled = true; definition.Settings.AllowDemandStart = true;
             definition.Settings.DisallowStartIfOnBatteries = false; definition.Settings.StopIfGoingOnBatteries = false;
             definition.Settings.ExecutionTimeLimit = "PT0S"; definition.Settings.MultipleInstances = 2;
+            definition.Settings.RestartInterval = "PT1M"; definition.Settings.RestartCount = 3;
             if (startup)
             {
-                dynamic trigger = definition.Triggers.Create(9); trigger.UserId = sid; trigger.Enabled = true;
+                dynamic trigger = definition.Triggers.Create(9); trigger.UserId = sid; trigger.Enabled = true; trigger.Delay = "PT10S";
             }
             dynamic action = definition.Actions.Create(0);
             action.Path = exe; action.Arguments = "--worker --background"; action.WorkingDirectory = AppContext.BaseDirectory;
