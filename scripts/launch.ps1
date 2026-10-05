@@ -18,7 +18,7 @@ try {
         Write-Output 'Demo opened with sample data. Exit it from its tray menu before starting another demo.'
     }
     else {
-        $taskLauncher = Start-Process -FilePath $taskExe -WorkingDirectory $taskRoot -WindowStyle Hidden -PassThru
+        $taskLauncher = Start-Process -FilePath $taskExe -ArgumentList '--open' -WorkingDirectory $taskRoot -WindowStyle Hidden -PassThru
         if (-not $taskLauncher.WaitForExit(30000)) { throw 'Startup is taking longer than expected; check the tray before starting again.' }
         if ($taskLauncher.ExitCode -ne 0) { throw 'Startup failed. Check the application message and run from a writable folder.' }
         Write-Output 'Resident started. Click its tray icon to authorize A and B.'

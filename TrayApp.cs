@@ -10,7 +10,7 @@ internal sealed class TrayApp : ApplicationContext
 {
     readonly bool demo;
     readonly string data = MonitorStorage.Root;
-    readonly Form form = new();
+    readonly PanelForm form = new();
     readonly NotifyIcon tray = new();
     ResidentWidget widget;
     readonly ContextMenuStrip menu = new();
@@ -36,6 +36,7 @@ internal sealed class TrayApp : ApplicationContext
     public TrayApp(bool demo, string? preview, bool background = false, string? widgetPreview = null, string? displayCheck = null)
     {
         this.demo = demo;
+        form.OpenRequested = Show;
         state = demo ? Demo() : Load();
         clients = demo ? [] : Enumerable.Range(0, 2).Select(i => new CodexClient(Path.Combine(data, "accounts", i == 0 ? "A" : "B"))).ToArray();
         form.SuspendLayout();
@@ -222,6 +223,13 @@ internal sealed class TrayApp : ApplicationContext
     async Task CheckDisplayRecoveryAsync(string prefix)
     {
         var transitions = new List<object>();
+        form.Hide();
+        if (!ResidentLaunch.RequestPanel(demo: true)) throw new InvalidOperationException("App entry must find the existing panel");
+        await Task.Delay(100);
+        if (!form.Visible) throw new InvalidOperationException("App entry must open the existing panel");
+        form.Close();
+        if (form.Visible || form.IsDisposed) throw new InvalidOperationException("Closing the panel must retain the resident worker");
+        transitions.Add(new { AppEntryOpensExistingPanel = true, ClosingPanelKeepsResident = true });
         var stable = widget.Snapshot!;
         using (var coldStart = new ResidentWidget(state, true, menu, () => {}, () => {}))
         {
@@ -471,6 +479,15 @@ internal sealed class TrayApp : ApplicationContext
         finally { DestroyIcon(handle); }
     }
     [DllImport("user32.dll")] static extern bool DestroyIcon(IntPtr handle);
+    sealed class PanelForm : Form
+    {
+        internal Action? OpenRequested;
+        protected override void WndProc(ref Message message)
+        {
+            if ((uint)message.Msg == ResidentLaunch.OpenPanelMessage) { OpenRequested?.Invoke(); return; }
+            base.WndProc(ref message);
+        }
+    }
     protected override void ExitThreadCore()
     {
         SystemEvents.DisplaySettingsChanged -= displayChanged;

@@ -2,7 +2,7 @@
 
 A Windows taskbar monitor that keeps two Codex accounts' remaining quotas visible at a glance.
 
-**Windows 11 · C# / .NET 8 · MIT · Experimental v1.3.4**
+**Windows 11 · C# / .NET 8 · MIT · Experimental v1.3.5**
 
 **双账号剩余额度，任务栏一眼看清，悬停再看详情。**
 
@@ -90,6 +90,8 @@ cd codex-quota-tray
 保持 `dist` 和它的父目录位置不变，放在当前用户可写的位置。正式启动器必须位于 `dist` 内；普通启动会注册或更新本用户的 `CodexQuotaTray-<Windows SID>` 系统任务，并立即启动后台监控。默认不开机自启，可在面板勾选“开机启动”。无需管理员权限。
 
 启用开机启动后，登录延迟 10 秒启动；任务栏仍未就绪或暂时拒绝创建圆环时，保留托盘并自动重试挂载。进程异常退出时，系统任务每隔 1 分钟最多重启 3 次。更新版本后启动一次 `Start.cmd`，以更新任务设置。
+
+需要普通应用图标入口时，构建后运行 `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\create-shortcuts.ps1`，会在应用文件夹、桌面和开始菜单创建快捷方式。双击入口或 `Start.cmd` 会启动监控并打开账号面板；再次点击会打开已有面板，保持一个后台进程。开机自动启动仍保持后台常驻，关闭面板只会收起。
 
 首次使用点击托盘图标打开完整面板，分别为 A、B 点击“登录 / 更换账号”，在浏览器中选择对应账号。两个位置需要分别授权，授权后核对面板中的邮箱。ChatGPT 网页上的多账号登录不会自动授权给本工具。
 

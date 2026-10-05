@@ -37,6 +37,16 @@ internal static class Program
             try
             {
                 ResidentLaunch.Install(ResidentLaunch.StartupEnabled); ResidentLaunch.Start();
+                if (args.Contains("--open"))
+                {
+                    var opened = false;
+                    for (var attempt = 0; attempt < 100 && !opened; attempt++)
+                    {
+                        opened = ResidentLaunch.RequestPanel();
+                        if (!opened) Thread.Sleep(100);
+                    }
+                    if (!opened) throw new InvalidOperationException("面板尚未准备好，请点击托盘图标重试。");
+                }
                 if (args.Contains("--deploy")) File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "deployment-result.txt"), "PASS\n" + ResidentLaunch.TaskName);
             }
             catch (Exception ex)

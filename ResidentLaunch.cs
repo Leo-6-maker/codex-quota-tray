@@ -1,11 +1,44 @@
 using System.Runtime.InteropServices;
+using System.Diagnostics;
 using System.Security.Principal;
+using System.Text;
 using Microsoft.Win32;
 
 namespace CodexQuotaTray;
 
 internal static class ResidentLaunch
 {
+    delegate bool EnumWindow(IntPtr window, IntPtr parameter);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern uint RegisterWindowMessage(string message);
+    [DllImport("user32.dll")] static extern bool EnumWindows(EnumWindow callback, IntPtr parameter);
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr window, StringBuilder title, int length);
+    [DllImport("user32.dll")] static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] static extern bool AllowSetForegroundWindow(uint process);
+    internal static readonly uint OpenPanelMessage = RegisterWindowMessage("CodexQuotaTray.OpenPanel");
+
+    internal static bool RequestPanel(bool demo = false)
+    {
+        var ids = new HashSet<int>();
+        foreach (var p in Process.GetProcessesByName("CodexQuotaTray"))
+        {
+            using (p) { try { if (string.Equals(p.MainModule?.FileName, Environment.ProcessPath, StringComparison.OrdinalIgnoreCase)) ids.Add(p.Id); } catch { /* A process may exit during enumeration. */ } }
+        }
+        var sent = false;
+        EnumWindows((window, _) =>
+        {
+            GetWindowThreadProcessId(window, out var id);
+            if (!ids.Contains((int)id)) return true;
+            var title = new StringBuilder(128); GetWindowText(window, title, title.Capacity);
+            if (!title.ToString().StartsWith("Codex 双账号额度 ·", StringComparison.Ordinal)) return true;
+            if (title.ToString().EndsWith(" · 演示数据", StringComparison.Ordinal) != demo) return true;
+            AllowSetForegroundWindow(id);
+            sent = PostMessage(window, OpenPanelMessage, IntPtr.Zero, IntPtr.Zero);
+            return !sent;
+        }, IntPtr.Zero);
+        return sent;
+    }
+
     public static string TaskName => "CodexQuotaTray-" + WindowsIdentity.GetCurrent().User!.Value;
     static dynamic Connect()
     {
