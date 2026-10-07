@@ -11,6 +11,24 @@ internal static class SelfTest
     static void Check(bool condition, string name) { if (!condition) throw new InvalidOperationException(name); }
     public static void Run()
     {
+        foreach (var scale in new[] { 1f, 1.25f, 1.75f, 2f })
+        {
+            var testRings = new Rectangle(-500, 2088, (int)(72 * scale), (int)(34 * scale));
+            var card = new Rectangle(testRings.Right - (int)(320 * scale), testRings.Top - (int)(204 * scale) - (int)(20 * scale), (int)(320 * scale), (int)(204 * scale));
+            var gap = new Point(testRings.Left + testRings.Width / 2, (testRings.Top + card.Bottom) / 2);
+            Check(ResidentWidget.InHoverArea(testRings, card, gap, (int)(10 * scale)), "Hover corridor preserves gap across DPI and negative coordinates");
+            Check(!ResidentWidget.InHoverArea(testRings, card, new Point(testRings.Right + (int)(50 * scale), gap.Y), (int)(10 * scale)), "Hover corridor must not cover unrelated taskbar items");
+            var below = new Rectangle(card.X, testRings.Bottom + (int)(20 * scale), card.Width, card.Height);
+            Check(ResidentWidget.InHoverArea(testRings, below, new Point(gap.X, (testRings.Bottom + below.Top) / 2), (int)(10 * scale)), "Hover corridor supports a card below the taskbar");
+        }
+        var opens = 0; var refreshes = 0;
+        using (var hoverCard = new HoverCard(TrayApp.Demo(), false, () => opens++, () => refreshes++))
+        {
+            hoverCard.Busy = true; hoverCard.ClickAt(new Point(270, 185));
+            Check(opens == 0 && refreshes == 0, "Busy refresh click must not open panel");
+            hoverCard.Busy = false; hoverCard.ClickAt(new Point(270, 185)); hoverCard.ClickAt(new Point(20, 50));
+            Check(opens == 1 && refreshes == 1, "Idle refresh and panel clicks retain their actions");
+        }
         var old = QuotaWindow.Parse(Json("""{"rateLimits":{"primary":{"usedPercent":66,"windowDurationMins":300,"resetsAt":2000000000},"secondary":{"usedPercent":39,"windowDurationMins":10080}}}"""));
         Check(old.Count == 2 && old[0].Remaining == 34 && old[1].Label == "W", "Remaining / legacy parser");
         var modern = QuotaWindow.Parse(Json("""{"rateLimits":{"primary":{"usedPercent":99}},"rateLimitsByLimitId":{"codex":{"primary":{"usedPercent":52,"windowDurationMins":10080},"secondary":null},"other":{"primary":{"usedPercent":20,"windowDurationMins":60}}}}"""));

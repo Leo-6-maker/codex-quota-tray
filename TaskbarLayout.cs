@@ -70,7 +70,7 @@ internal static class TaskbarLayout
             throw new InvalidOperationException("任务栏挂载位置已变化，等待重新定位。");
     }
     public static float PrimaryScale => Math.Max(96, GetDpiForWindow(Shell)) / 96f;
-    public static object WindowInfo(IntPtr window) => new { Handle = window.ToInt64(), Parent = GetParent(window).ToInt64(), Visible = IsWindowVisible(window), Bounds = BoundsOf(window), Dpi = GetDpiForWindow(window), Style = GetWindowLongPtr(window, -16).ToInt64().ToString("X"), Awareness = GetAwarenessFromDpiAwarenessContext(GetWindowDpiAwarenessContext(window)) };
+    public static object WindowInfo(IntPtr window) => new { Handle = window.ToInt64(), Parent = GetParent(window).ToInt64(), Visible = IsWindowVisible(window), Bounds = BoundsOf(window), Dpi = GetDpiForWindow(window), Style = GetWindowLongPtr(window, -16).ToInt64().ToString("X"), ExtendedStyle = GetWindowLongPtr(window, -20).ToInt64().ToString("X"), Awareness = GetAwarenessFromDpiAwarenessContext(GetWindowDpiAwarenessContext(window)) };
     public static List<object> MonitorWindows()
     {
         var ids = Process.GetProcessesByName("CodexQuotaTray").Select(p => { using (p) return p.Id; }).ToHashSet();

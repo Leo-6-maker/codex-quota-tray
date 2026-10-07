@@ -2,7 +2,7 @@
 
 A Windows taskbar monitor that keeps two Codex accounts' remaining quotas visible at a glance.
 
-**Windows 11 · C# / .NET 8 · MIT · Experimental v1.3.5**
+**Windows 11 · C# / .NET 8 · MIT · Experimental v1.3.6**
 
 **双账号剩余额度，任务栏一眼看清，悬停再看详情。**
 
