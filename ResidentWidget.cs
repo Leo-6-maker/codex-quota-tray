@@ -16,10 +16,13 @@ internal sealed class ResidentWidget : Control
     bool enabled, checking, dark;
     Color TransparencyKey => dark ? Color.FromArgb(1,1,1) : Color.FromArgb(254,254,254);
     public string? LayoutError { get; private set; }
-    long entered, left;
+    long entered, left, lastTick;
     Point lastPointer;
     public string? HoverError { get; private set; }
-    internal object HoverState => new { TimerRunning = hover.Enabled, Pointer = lastPointer, LogicalPointer = Cursor.Position, OverRing = ScreenBounds.Contains(lastPointer), CardVisible = card.Visible, CardBounds = card.Bounds, Error = HoverError };
+    int hoverResets;
+    string? resetReason;
+    internal bool PointerOverRing => ScreenBounds.Contains(lastPointer);
+    internal object HoverState => new { TimerRunning = hover.Enabled, LastTick = lastTick, Pointer = lastPointer, LogicalPointer = Cursor.Position, OverRing = ScreenBounds.Contains(lastPointer), CardVisible = card.Visible, CardBounds = card.Bounds, CardWindow = card.IsHandleCreated ? TaskbarLayout.WindowInfo(card.Handle) : null, Resets = hoverResets, ResetReason = resetReason, Error = HoverError };
     public Rectangle TrafficBounds { get; private set; }
     public bool InTaskbar { get; private set; }
     public bool Embedded => IsHandleCreated && TaskbarLayout.IsEmbedded(Handle);
@@ -83,6 +86,8 @@ internal sealed class ResidentWidget : Control
             var snapshot = suppliedSnapshot ?? await Task.Run(TaskbarLayout.Read);
             if (IsDisposed || !enabled) return;
             if (!TaskbarLayout.IsCurrent(snapshot)) throw new InvalidOperationException("任务栏正在变化，等待稳定后恢复。");
+            if (Snapshot is { } previous && (previous.Dpi != snapshot.Dpi || previous.Bar != snapshot.Bar || previous.ShellHandle != snapshot.ShellHandle))
+                ResetHover("Taskbar changed");
             Snapshot = snapshot;
             var screen = Screen.FromRectangle(snapshot.Bar).Bounds;
             var scale = snapshot.Dpi / 96f;
@@ -121,11 +126,23 @@ internal sealed class ResidentWidget : Control
         if (!enabled || !Visible) return;
         try
         {
-            if (HoverPointerForCheck is { } pointer) UpdateHover(pointer, Environment.TickCount64);
-            else if (GetPhysicalCursorPos(out pointer)) UpdateHover(pointer, Environment.TickCount64);
+            var now = Environment.TickCount64;
+            // Modern Standby can pause timers without sending PowerModeChanged.Resume.
+            if (lastTick != 0 && now - lastTick > 5000) ResetHover("Timer resumed after pause");
+            lastTick = now;
+            if (HoverPointerForCheck is { } pointer) UpdateHover(pointer, now);
+            else if (GetPhysicalCursorPos(out pointer)) UpdateHover(pointer, now);
             HoverError = null;
         }
         catch (Exception ex) { HoverError = ex.GetType().Name + ": " + ex.Message; card.Hide(); entered = left = 0; }
+    }
+    internal void ResetHover(string reason)
+    {
+        hover.Stop();
+        card.ResetSurface();
+        entered = left = lastTick = 0;
+        HoverError = null; resetReason = reason; hoverResets++;
+        if (enabled && !IsDisposed) hover.Start();
     }
     void UpdateHover(Point pointer, long now)
     {
@@ -141,7 +158,7 @@ internal sealed class ResidentWidget : Control
             }
             left = 0;
             if (entered == 0) entered = now;
-            if (!card.Visible && now - entered >= 350) ShowCard();
+            if (now - entered >= 350 && (!card.Visible || over && !card.Presented)) ShowCard();
         }
         else
         {
@@ -172,8 +189,12 @@ internal sealed class ResidentWidget : Control
         var gap = (int)Math.Ceiling(8 * scale);
         var y = bounds.Top - card.Height - gap;
         if (y < working.Top) y = bounds.Bottom + gap;
-        card.Location = new Point(x, Math.Clamp(y, working.Top, Math.Max(working.Top, working.Bottom - card.Height)));
-        card.Show(); card.Invalidate();
+        var target = new Rectangle(new Point(x, Math.Clamp(y, working.Top, Math.Max(working.Top, working.Bottom - card.Height))), card.Size);
+        card.Bounds = target;
+        card.Show();
+        // Reassert native position and Z order after Show/DPI processing, without activation.
+        card.Present(target);
+        card.Invalidate();
     }
 
     // Render the same hover card for visual QA without moving the user's mouse.
@@ -185,7 +206,7 @@ internal sealed class ResidentWidget : Control
         HoverPointerForCheck = new Point(ScreenBounds.Left + ScreenBounds.Width / 4, ScreenBounds.Top + ScreenBounds.Height / 2);
         try
         {
-            await Task.Delay(600);
+            await WaitForCard();
             for (var sample = 0; sample < 10; sample++)
             {
                 if (!card.Visible) throw new InvalidOperationException($"Timed hover must retain its card: enabled={enabled}, timer={hover.Enabled}, widget={Visible}, bounds={ScreenBounds}, pointer={HoverPointerForCheck}, entered={entered}, left={left}, error={LayoutError}");
@@ -193,8 +214,33 @@ internal sealed class ResidentWidget : Control
                     throw new InvalidOperationException("Timed hover card must be on top of the displayed desktop");
                 await Task.Delay(400);
             }
+            foreach (var reason in new[] { "Display settings changed", "System resumed", "Session unlocked" })
+            {
+                ResetHover(reason);
+                if (card.Visible || card.IsHandleCreated) throw new InvalidOperationException("Environment recovery must discard the stale card surface");
+                await WaitForCard();
+                if (!card.Visible || !card.Presented || WindowFromPoint(new Point(card.Left + card.Width / 2, card.Top + 20)) != card.Handle || GetForegroundWindow() != focus)
+                    throw new InvalidOperationException("Hover must recover without focus activation after " + reason);
+            }
+            // Keep WinForms Visible=true while the native window is offscreen and no longer topmost.
+            HoverCard.SetWindowPos(card.Handle, (IntPtr)(-2), -30000, -30000, card.Width, card.Height, 0x0010);
+            if (!card.Visible || card.Presented) throw new InvalidOperationException("Native presentation fault injection failed");
+            await WaitForCard();
+            if (!card.Presented || WindowFromPoint(new Point(card.Left + card.Width / 2, card.Top + 20)) != card.Handle)
+                throw new InvalidOperationException("Timer must repair an offscreen or lowered card even when Visible=true");
+            var resets = hoverResets;
+            lastTick = Environment.TickCount64 - 6000;
+            await WaitForCard(resets);
+            if (hoverResets != resets + 1 || !card.Presented || GetForegroundWindow() != focus)
+                throw new InvalidOperationException($"Paused timer must recover hover without relying on a resume broadcast: resets={resets}->{hoverResets}, visible={card.Visible}, presented={card.Presented}, focus={focus}->{GetForegroundWindow()}, entered={entered}, lastTick={lastTick}, now={Environment.TickCount64}, reason={resetReason}, error={HoverError}");
         }
         finally { HoverPointerForCheck = null; hover.Stop(); }
+        async Task WaitForCard(int? afterReset = null)
+        {
+            var deadline = Environment.TickCount64 + 3000;
+            while ((!card.Visible || !card.Presented || afterReset is int count && hoverResets <= count) && Environment.TickCount64 < deadline)
+                await Task.Delay(50);
+        }
         entered = left = 0; card.Hide();
         if (Embedded)
         {
@@ -241,7 +287,7 @@ internal sealed class ResidentWidget : Control
         using (var bitmap = new Bitmap(card.Width, card.Height)) { card.DrawToBitmap(bitmap, card.ClientRectangle); bitmap.Save(prefix + "-card.png"); }
         card.HighlightedAccount = 1;
         using (var bitmap = new Bitmap(card.Width, card.Height)) { card.DrawToBitmap(bitmap, card.ClientRectangle); bitmap.Save(prefix + "-card-b.png"); }
-        File.WriteAllText(prefix + "-placement.json", System.Text.Json.JsonSerializer.Serialize(new { Bounds = ScreenBounds, InTaskbar, Embedded, TransparentBackground = true, RemountCheck = Embedded ? "PASS" : "Fallback", TrafficBounds, HoverCheck = "PASS", TimerHoverCheck = "PASS", HoverCorridorCheck = "PASS", AccountHighlightCheck = "PASS", ScreenRingPixels = pixels, LayerCheck = Embedded ? "Native taskbar child" : InTaskbar ? "PASS" : "Not in taskbar", FocusPreserved = GetForegroundWindow() == focus, Collision = Snapshot?.Occupied.Any(r => r.IntersectsWith(ScreenBounds)) }, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+        File.WriteAllText(prefix + "-placement.json", System.Text.Json.JsonSerializer.Serialize(new { Bounds = ScreenBounds, InTaskbar, Embedded, TransparentBackground = true, RemountCheck = Embedded ? "PASS" : "Fallback", TrafficBounds, HoverCheck = "PASS", TimerHoverCheck = "PASS", EnvironmentHoverRecoveryCheck = "PASS", NativePresentationRecoveryCheck = "PASS", PausedTimerRecoveryCheck = "PASS", HoverCorridorCheck = "PASS", AccountHighlightCheck = "PASS", ScreenRingPixels = pixels, LayerCheck = Embedded ? "Native taskbar child" : InTaskbar ? "PASS" : "Not in taskbar", FocusPreserved = GetForegroundWindow() == focus, Collision = Snapshot?.Occupied.Any(r => r.IntersectsWith(ScreenBounds)) }, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
         if (timerWasRunning) hover.Start();
     }
 
@@ -319,6 +365,17 @@ internal sealed class HoverCard : Form
     public bool Dark { get; set; }
     public bool Busy { get; set; }
     public int HighlightedAccount { get; set; } = -1;
+    internal bool Presented => IsHandleCreated && TaskbarLayout.IsWindowVisible(Handle) &&
+        (GetWindowLongPtrW(Handle, -20).ToInt64() & 8) != 0 &&
+        Screen.FromRectangle(Bounds).WorkingArea.Contains(TaskbarLayout.BoundsOf(Handle));
+    internal void ResetSurface() { Hide(); if (IsHandleCreated) DestroyHandle(); }
+    internal void Present(Rectangle bounds)
+    {
+        if (!SetWindowPos(Handle, (IntPtr)(-1), bounds.X, bounds.Y, bounds.Width, bounds.Height, 0x0050))
+            throw new System.ComponentModel.Win32Exception(System.Runtime.InteropServices.Marshal.GetLastWin32Error(), "Hover card position");
+    }
+    [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)] internal static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern IntPtr GetWindowLongPtrW(IntPtr window, int index);
     protected override bool ShowWithoutActivation => true;
     // Native topmost style avoids Form.TopMost's focus-on-show path.
     protected override CreateParams CreateParams { get { var p = base.CreateParams; p.ExStyle |= 0x08000088; return p; } }

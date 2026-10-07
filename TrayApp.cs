@@ -15,6 +15,8 @@ internal sealed class TrayApp : ApplicationContext
     ResidentWidget widget;
     readonly ContextMenuStrip menu = new();
     readonly EventHandler displayChanged;
+    readonly PowerModeChangedEventHandler powerChanged;
+    readonly SessionSwitchEventHandler sessionChanged;
     int widgetRecoveries;
     readonly System.Windows.Forms.Timer clock = new() { Interval = 1000 };
     readonly CodexClient[] clients;
@@ -56,11 +58,12 @@ internal sealed class TrayApp : ApplicationContext
         var resident = new ToolStripMenuItem("显示任务栏圆环") { Checked = state.WidgetEnabled, CheckOnClick = true };
         menu.Items.Add(resident);
         widget = new ResidentWidget(state, demo, menu, Show, () => _ = RefreshAllAsync());
-        displayChanged = (_, _) =>
-        {
-            if (!exiting && form.IsHandleCreated) form.BeginInvoke(async () => { FitPanel(); await EnsureWidgetAsync(true); });
-        };
+        displayChanged = (_, _) => QueueEnvironmentRecovery("Display settings changed");
+        powerChanged = (_, e) => { if (e.Mode == PowerModes.Resume) QueueEnvironmentRecovery("System resumed"); };
+        sessionChanged = (_, e) => { if (e.Reason == SessionSwitchReason.SessionUnlock) QueueEnvironmentRecovery("Session unlocked"); };
         SystemEvents.DisplaySettingsChanged += displayChanged;
+        SystemEvents.PowerModeChanged += powerChanged;
+        SystemEvents.SessionSwitch += sessionChanged;
         form.DpiChanged += (_, _) => form.BeginInvoke(FitPanel);
         menu.Items.Add("重新寻找任务栏空位", null, async (_, _) => await widget.RepositionAsync());
         menu.Items.Add("退出", null, (_, _) => ExitThread());
@@ -72,6 +75,7 @@ internal sealed class TrayApp : ApplicationContext
         {
             await EnsureWidgetAsync();
             UpdateUi();
+            if (!widget.IsDisposed && widget.PointerOverRing) RecordHealth("ready");
             if (!demo && !busy && DateTimeOffset.UtcNow >= nextRefresh) await RefreshAllAsync();
         };
         UpdateUi();
@@ -209,6 +213,21 @@ internal sealed class TrayApp : ApplicationContext
         }
         if (force || state.WidgetEnabled && !widget.Visible) await widget.SetEnabledAsync(state.WidgetEnabled);
         if (recovered) RecordHealth("ready");
+    }
+    void QueueEnvironmentRecovery(string reason)
+    {
+        if (exiting || !form.IsHandleCreated || form.IsDisposed) return;
+        try
+        {
+            form.BeginInvoke(async () =>
+            {
+                if (exiting || form.IsDisposed) return;
+                if (!widget.IsDisposed) widget.ResetHover(reason);
+                FitPanel(); await EnsureWidgetAsync(true);
+                RecordHealth("ready");
+            });
+        }
+        catch (InvalidOperationException) when (exiting || form.IsDisposed || !form.IsHandleCreated) { }
     }
     void FitPanel()
     {
@@ -491,13 +510,15 @@ internal sealed class TrayApp : ApplicationContext
     protected override void ExitThreadCore()
     {
         SystemEvents.DisplaySettingsChanged -= displayChanged;
+        SystemEvents.PowerModeChanged -= powerChanged;
+        SystemEvents.SessionSwitch -= sessionChanged;
         exiting = true; clock.Stop(); widget.Dispose(); loginCancellation?.Cancel();
         foreach (var client in clients) client.Dispose();
         tray.Visible = false; form.Close(); base.ExitThreadCore();
     }
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { SystemEvents.DisplaySettingsChanged -= displayChanged; widget.Dispose(); clock.Dispose(); tray.Dispose(); ownedIcon?.Dispose(); form.Dispose(); foreach (var client in clients) client.Dispose(); }
+        if (disposing) { SystemEvents.DisplaySettingsChanged -= displayChanged; SystemEvents.PowerModeChanged -= powerChanged; SystemEvents.SessionSwitch -= sessionChanged; widget.Dispose(); clock.Dispose(); tray.Dispose(); ownedIcon?.Dispose(); form.Dispose(); foreach (var client in clients) client.Dispose(); }
         base.Dispose(disposing);
     }
 }

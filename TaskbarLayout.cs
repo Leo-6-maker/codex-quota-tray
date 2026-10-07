@@ -17,7 +17,7 @@ internal static class TaskbarLayout
     [DllImport("user32.dll")] static extern IntPtr GetDC(IntPtr window);
     [DllImport("user32.dll")] static extern int ReleaseDC(IntPtr window, IntPtr dc);
     [DllImport("gdi32.dll")] static extern uint GetPixel(IntPtr dc, int x, int y);
-    [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr window);
+    [DllImport("user32.dll")] internal static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll")] internal static extern bool IsWindow(IntPtr window);
     [DllImport("user32.dll")] static extern bool EnumWindows(EnumWindow callback, IntPtr param);
     [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr window, EnumWindow callback, IntPtr param);
